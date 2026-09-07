@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin – Davinder Handlooms</title>
+<link rel="icon" type="image/jpeg" href="davinder-logo.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase (Firestore for product data, Storage for photos, Auth to protect this page) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="firebase-config.js"></script>
+
+<!--
+  Photo hosting: Cloudinary (free tier, no billing card needed).
+  1. Sign up free at https://cloudinary.com
+  2. Dashboard → note your "Cloud name" at the top.
+  3. Settings (gear icon) → Upload → Upload presets → Add upload preset
+     → Signing Mode: "Unsigned" → Save → note the preset name.
+  4. Paste both values in the two constants below.
+-->
+<script>
+  const CLOUDINARY_CLOUD_NAME = "ufmpjgnd";
+  const CLOUDINARY_UPLOAD_PRESET = "davinder-products";
+</script>
+
+<style>
+  :root{
+    --ivory:#FBF5E9;
+    --ivory-2:#F2E6CC;
+    --charcoal:#2A2117;
+    --madder:#B5402C;
+    --madder-2:#8C2E1E;
+    --thread:#E3D3AC;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--ivory); color:var(--charcoal);
+    font-family:'Work Sans', sans-serif; font-size:15px; line-height:1.5;
+  }
+  h1,h2,h3{font-family:'Fraunces', serif; font-weight:500; margin:0;}
+  .wrap{max-width:900px; margin:0 auto; padding:32px 20px 80px;}
+
+  /* ---------- Top bar ---------- */
+  .admin-top{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 20px; border-bottom:1px solid var(--thread); background:#fff;
+  }
+  .admin-top a{color:var(--charcoal); text-decoration:none; font-size:14px;}
+  .admin-top h1{font-size:20px; font-style:italic;}
+  .btn{
+    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    border:none; border-radius:999px; padding:10px 20px;
+    font-family:'Work Sans', sans-serif; font-size:14px; font-weight:600;
+    text-decoration:none;
+  }
+  .btn-primary{background:linear-gradient(180deg, var(--madder), var(--madder-2)); color:#fff;}
+  .btn-primary:hover{opacity:.92;}
+  .btn-primary:disabled{opacity:.5; cursor:not-allowed;}
+  .btn-ghost{background:transparent; color:var(--charcoal); border:1px solid var(--thread);}
+  .btn-ghost:hover{background:var(--ivory-2);}
+  .btn-danger{background:#fff; color:var(--madder); border:1px solid var(--madder);}
+  .btn-danger:hover{background:#fdeceb;}
+
+  /* ---------- Login ---------- */
+  #login-screen{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .login-card{
+    width:100%; max-width:360px; background:#fff; border:1px solid var(--thread);
+    border-radius:var(--radius); padding:32px;
+  }
+  .login-card h1{font-size:24px; font-style:italic; margin-bottom:6px;}
+  .login-card p{color:#6B5F4E; font-size:13px; margin-bottom:24px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:#6B5F4E; margin-bottom:6px;}
+  .field input, .field select, .field textarea{
+    width:100%; border:1px solid var(--thread); border-radius:8px;
+    padding:11px 14px; font-family:'Work Sans', sans-serif; font-size:14px;
+    background:#fff; color:var(--charcoal); outline:none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{border-color:var(--madder);}
+  .field textarea{resize:vertical; min-height:80px;}
+  #login-error{color:var(--madder); font-size:13px; margin-top:12px; display:none;}
+
+  /* ---------- Product form ---------- */
+  .panel{background:#fff; border:1px solid var(--thread); border-radius:var(--radius); padding:28px; margin-bottom:36px;}
+  .panel h2{font-size:22px; margin-bottom:20px;}
+  .form-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .form-grid .full{grid-column:1 / -1;}
+  @media (max-width:560px){ .form-grid{grid-template-columns:1fr;} }
+
+  .image-drop{
+    border:2px dashed var(--thread); border-radius:10px; padding:20px;
+    text-align:center; cursor:pointer; background:var(--ivory);
+    transition:border-color .2s ease, background .2s ease;
+  }
+  .image-drop:hover, .image-drop.is-dragover{border-color:var(--madder); background:#fdf3f0;}
+  .image-drop input{display:none;}
+  .image-drop .hint{font-size:13px; color:#6B5F4E; margin-top:4px;}
+  .image-previews{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;}
+  .image-preview{position:relative; width:84px; height:84px; border-radius:8px; overflow:hidden; border:1px solid var(--thread);}
+  .image-preview img{width:100%; height:100%; object-fit:cover; display:block;}
+  .image-preview button{
+    position:absolute; top:2px; right:2px; width:20px; height:20px; border-radius:50%;
+    background:rgba(36,31,25,0.75); color:#fff; border:none; cursor:pointer;
+    font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center;
+  }
+
+  .progress-bar{height:6px; border-radius:999px; background:var(--ivory-2); overflow:hidden; margin-top:14px; display:none;}
+  .progress-bar-fill{height:100%; width:0%; background:linear-gradient(90deg, var(--madder), var(--madder-2)); transition:width .2s ease;}
+  #form-status{font-size:13px; margin-top:12px;}
+  #form-status.error{color:var(--madder);}
+  #form-status.success{color:#2E6B3E;}
+
+  /* ---------- Product list ---------- */
+  .list-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  .list-head h2{font-size:22px;}
+  #admin-product-list{display:flex; flex-direction:column; gap:12px;}
+  .admin-product-row{
+    display:flex; align-items:center; gap:14px;
+    background:#fff; border:1px solid var(--thread); border-radius:10px; padding:12px;
+  }
+  .admin-product-row .thumb{width:56px; height:56px; border-radius:8px; overflow:hidden; background:var(--ivory-2); flex-shrink:0;}
+  .admin-product-row .thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .admin-product-row .thumb.no-photo{display:flex; align-items:center; justify-content:center; font-size:10px; color:#9C8F76; text-align:center;}
+  .admin-product-row .info{flex:1; min-width:0;}
+  .admin-product-row .info .name{font-weight:600; font-size:14px;}
+  .admin-product-row .info .meta{font-size:12px; color:#6B5F4E; margin-top:2px;}
+  .admin-product-row .actions{display:flex; gap:8px; flex-shrink:0;}
+  #product-list-empty{color:#6B5F4E; font-size:14px; padding:20px 0; text-align:center;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN GATE -->
+<div id="login-screen">
+  <div class="login-card">
+    <h1>Davinder Handlooms</h1>
+    <p>Admin sign-in</p>
+    <form id="login-form">
+      <div class="field">
+        <label for="login-email">Email</label>
+        <input type="email" id="login-email" required autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Sign in</button>
+      <div id="login-error"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ADMIN DASHBOARD (hidden until signed in) -->
+<div id="admin-dashboard" style="display:none;">
+  <div class="admin-top">
+    <h1>Davinder Handlooms — Admin</h1>
+    <div style="display:flex; align-items:center; gap:16px;">
+      <a href="index.html">View site</a>
+      <button class="btn btn-ghost" id="logout-btn">Log out</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- ADD PRODUCT -->
+    <div class="panel">
+      <h2>Add a product</h2>
+      <form id="product-form">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="p-name">Product name</label>
+            <input type="text" id="p-name" placeholder="e.g. Cotton Handloom Bedsheet — Indigo Stripe" required>
+          </div>
+          <div class="field full">
+            <label for="p-description">Description</label>
+            <textarea id="p-description" placeholder="Fabric, size, care instructions, anything a customer would want to know…"></textarea>
+          </div>
+          <div class="field">
+            <label for="p-price">Price (₹)</label>
+            <input type="number" id="p-price" min="0" step="1" placeholder="e.g. 1499">
+          </div>
+          <div class="field">
+            <label for="p-category">Category</label>
+            <select id="p-category" required>
+              <option value="" disabled selected>Choose a category…</option>
+              <option value="Bedsheets">Bedsheets</option>
+              <option value="Blankets">Blankets</option>
+              <option value="Pillows">Pillows</option>
+              <option value="Towels">Towels</option>
+              <option value="Curtains">Curtains</option>
+              <option value="Comforters">Comforters</option>
+              <option value="Sarees">Sarees</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label>Product photos (up to 3)</label>
+            <div class="image-drop" id="image-drop">
+              <input type="file" id="p-images" accept="image/*" multiple>
+              <div>📷 Tap to choose photos from your gallery</div>
+              <div class="hint">JPG or PNG, up to 3 photos per product</div>
+            </div>
+            <div class="image-previews" id="image-previews"></div>
+          </div>
+        </div>
+
+        <div class="progress-bar" id="progress-bar"><div class="progress-bar-fill" id="progress-bar-fill"></div></div>
+        <div style="margin-top:20px; display:flex; align-items:center; gap:14px;">
+          <button type="submit" class="btn btn-primary" id="submit-btn">Add product</button>
+          <span id="form-status"></span>
+        </div>
+      </form>
+    </div>
+
+    <!-- PRODUCT LIST -->
+    <div class="panel">
+      <div class="list-head">
+        <h2>Your products</h2>
+        <span id="product-total" style="font-size:13px; color:#6B5F4E;"></span>
+      </div>
+      <div id="admin-product-list"></div>
+      <div id="product-list-empty" style="display:none;">No products yet — add your first one above.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ---------- Auth gate ----------
+  const loginScreen = document.getElementById('login-screen');
+  const adminDashboard = document.getElementById('admin-dashboard');
+  const loginForm = document.getElementById('login-form');
+  const loginError = document.getElementById('login-error');
+  const logoutBtn = document.getElementById('logout-btn');
+
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    loginError.style.display = 'none';
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    firebase.auth().signInWithEmailAndPassword(email, password).catch((err) => {
+      loginError.textContent = err.message || 'Could not sign in — check your email and password.';
+      loginError.style.display = 'block';
+    });
+  });
+
+  logoutBtn.addEventListener('click', () => firebase.auth().signOut());
+
+  firebase.auth().onAuthStateChanged((user) => {
+    if (user) {
+      loginScreen.style.display = 'none';
+      adminDashboard.style.display = 'block';
+      initProductList();
+    } else {
+      loginScreen.style.display = 'flex';
+      adminDashboard.style.display = 'none';
+    }
+  });
+
+  // ---------- Image picker (up to 3 photos, from the device gallery/camera) ----------
+  const imageDrop = document.getElementById('image-drop');
+  const imageInput = document.getElementById('p-images');
+  const imagePreviews = document.getElementById('image-previews');
+  const MAX_IMAGES = 3;
+  let selectedFiles = [];
+
+  imageDrop.addEventListener('click', () => imageInput.click());
+
+  imageInput.addEventListener('change', () => {
+    const incoming = Array.from(imageInput.files || []);
+    selectedFiles = [...selectedFiles, ...incoming].slice(0, MAX_IMAGES);
+    renderImagePreviews();
+    imageInput.value = ''; // allow re-selecting the same file if removed
+  });
+
+  function renderImagePreviews(){
+    imagePreviews.innerHTML = selectedFiles.map((file, i) => {
+      const url = URL.createObjectURL(file);
+      return `
+        <div class="image-preview">
+          <img src="${url}" alt="Preview ${i + 1}">
+          <button type="button" data-index="${i}" aria-label="Remove photo">×</button>
+        </div>`;
+    }).join('');
+    imagePreviews.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedFiles.splice(Number(btn.dataset.index), 1);
+        renderImagePreviews();
+      });
+    });
+  }
+
+  // ---------- Add product (uploads photos to Storage, then saves the doc to Firestore) ----------
+  const productForm = document.getElementById('product-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const formStatus = document.getElementById('form-status');
+  const progressBar = document.getElementById('progress-bar');
+  const progressBarFill = document.getElementById('progress-bar-fill');
+
+  function setStatus(text, kind){
+    formStatus.textContent = text;
+    formStatus.className = kind || '';
+  }
+
+  productForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('p-name').value.trim();
+    const description = document.getElementById('p-description').value.trim();
+    const priceVal = document.getElementById('p-price').value;
+    const category = document.getElementById('p-category').value;
+
+    if (!name || !category){
+      setStatus('Please add a product name and category.', 'error');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    setStatus('Uploading photos…');
+    progressBar.style.display = selectedFiles.length ? 'block' : 'none';
+    progressBarFill.style.width = '0%';
+
+    try{
+      if (CLOUDINARY_CLOUD_NAME.startsWith('REPLACE_WITH')){
+        throw new Error('Cloudinary isn\'t configured yet — set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET at the top of admin.html.');
+      }
+
+      const docRef = firebase.firestore().collection('products').doc();
+      const imageUrls = [];
+
+      for (let i = 0; i < selectedFiles.length; i++){
+        const url = await uploadToCloudinary(selectedFiles[i]);
+        imageUrls.push(url);
+        progressBarFill.style.width = Math.round(((i + 1) / selectedFiles.length) * 100) + '%';
+      }
+
+      setStatus('Saving product…');
+      await docRef.set({
+        name,
+        description,
+        price: priceVal ? Number(priceVal) : null,
+        category,
+        images: imageUrls,
+        imageUrl: imageUrls[0] || '',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      productForm.reset();
+      selectedFiles = [];
+      renderImagePreviews();
+      progressBar.style.display = 'none';
+      setStatus('Product added ✓', 'success');
+    } catch (err){
+      console.error(err);
+      setStatus(err.message || 'Something went wrong — please try again.', 'error');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  // Uploads one file to Cloudinary's unsigned upload endpoint and returns its public URL
+  async function uploadToCloudinary(file){
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok){
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody?.error?.message || `Photo upload failed (${res.status})`);
+    }
+    const data = await res.json();
+    return data.secure_url;
+  }
+
+  // ---------- Live product list, with delete ----------
+  let productListStarted = false;
+  function initProductList(){
+    if (productListStarted) return;
+    productListStarted = true;
+
+    const listEl = document.getElementById('admin-product-list');
+    const emptyEl = document.getElementById('product-list-empty');
+    const totalEl = document.getElementById('product-total');
+
+    firebase.firestore().collection('products').orderBy('createdAt', 'desc').onSnapshot((snapshot) => {
+      if (snapshot.empty){
+        listEl.innerHTML = '';
+        emptyEl.style.display = 'block';
+        totalEl.textContent = '';
+        return;
+      }
+      emptyEl.style.display = 'none';
+      totalEl.textContent = snapshot.size + (snapshot.size === 1 ? ' product' : ' products');
+
+      listEl.innerHTML = snapshot.docs.map(doc => {
+        const p = doc.data();
+        const priceText = p.price ? `₹${Number(p.price).toLocaleString('en-IN')}` : 'No price set';
+        const thumb = p.imageUrl
+          ? `<img src="${p.imageUrl}" alt="${escapeHtml(p.name || '')}">`
+          : `No photo`;
+        return `
+          <div class="admin-product-row">
+            <div class="thumb ${p.imageUrl ? '' : 'no-photo'}">${thumb}</div>
+            <div class="info">
+              <div class="name">${escapeHtml(p.name || 'Untitled')}</div>
+              <div class="meta">${escapeHtml(p.category || 'No category')} · ${priceText}</div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-danger" data-id="${doc.id}">Delete</button>
+            </div>
+          </div>`;
+      }).join('');
+
+      listEl.querySelectorAll('.btn-danger').forEach(btn => {
+        btn.addEventListener('click', () => deleteProduct(btn.dataset.id));
+      });
+    });
+  }
+
+  async function deleteProduct(id){
+    if (!confirm('Delete this product? This removes it from the site immediately. (Its photos will stay stored in Cloudinary, but no longer be linked anywhere — this doesn\'t cost anything extra.)')) return;
+    try{
+      await firebase.firestore().collection('products').doc(id).delete();
+    } catch (err){
+      console.error(err);
+      alert('Could not delete this product: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, s => ({
+      '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+    }[s]));
+  }
+</script>
+</body>
+</html>
